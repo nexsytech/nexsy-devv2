@@ -52,6 +52,11 @@ firebase-debug.*.log
 *.json
 service-account-*.json
 
+# Terraform
+*.tfvars
+!*.tfvars.example
+
+# Original project files
 nexsy-2e6ea751-main/*
 
 
