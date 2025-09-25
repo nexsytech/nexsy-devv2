@@ -1,0 +1,55 @@
+# Development Environment Configuration
+
+# Project Configuration
+project_id      = "your-project-id" # CHANGE THIS to your actual project ID
+billing_account = "your-billing-account-id"   # CHANGE THIS to your billing account ID
+region          = "us-central1"
+zone            = "us-central1-a"
+environment     = "dev"
+
+# Application Configuration
+app_name    = "nexsy"
+domain_name = "dev.nexsy.app"
+
+# Storage Configuration
+storage_location = "US"
+storage_class    = "STANDARD"
+
+# Database Configuration
+firestore_location = "us-central1"
+
+# Container Registry Configuration
+artifact_repository_id = "nexsy-containers"
+
+# Budget Configuration
+monthly_budget_amount  = 50 # Lower budget for dev
+budget_alert_threshold = 0.8
+
+# Monitoring Configuration
+alert_email = "tech@nexsy.app" # Using authenticated account email
+
+# External API Keys (will be stored in Secret Manager)
+# Add your actual keys here or via environment variables
+freepik_api_key = ""
+openai_api_key  = ""
+
+# Social Media Platform Credentials
+facebook_app_id     = ""
+facebook_app_secret = ""
+tiktok_app_id       = ""
+tiktok_app_secret   = ""
+
+# Security
+cors_allowed_origins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "https://dev.nexsy.app"
+]
+
+# Resource Labels
+labels = {
+  project     = "nexsy"
+  environment = "dev"
+  managed_by  = "terraform"
+  team        = "development"
+}
