@@ -1,6 +1,7 @@
 # Dependencies
 node_modules/
 backend/venv/
+backend/nexsy-venv/
 backend/__pycache__/
 backend/*.pyc
 backend/.env
