@@ -1,6 +1,12 @@
 import FirebaseUser from '../lib/user';
+import { 
+  SimplifiedProduct, 
+  VisualLibrary, 
+  MarketingStrategy, 
+  CreativeOutput 
+} from './legacy-adapter.js';
 
-// Mock entity implementations - replace these with actual API calls to your new backend
+// Mock entity for unimplemented features
 class MockEntity {
   static async filter(criteria = {}, sort = '') {
     console.warn(`MockEntity.filter called with criteria:`, criteria);
@@ -28,11 +34,11 @@ class MockEntity {
   }
 }
 
+// Use real implementations for core product features
+export { SimplifiedProduct, VisualLibrary, MarketingStrategy, CreativeOutput };
+
+// Use mock for features not yet implemented
 export const BusinessProfile = MockEntity;
-export const VisualLibrary = MockEntity;
-export const MarketingStrategy = MockEntity;
-export const SimplifiedProduct = MockEntity;
-export const CreativeOutput = MockEntity;
 export const ConnectedAccount = MockEntity;
 export const OAuthState = MockEntity;
 export const LaunchJob = MockEntity;

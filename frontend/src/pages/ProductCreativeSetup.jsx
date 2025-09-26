@@ -15,9 +15,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from 'sonner';
 import { ArrowLeft, Wand2, Sparkles, UploadCloud, Trash2, Upload, Plus } from "lucide-react";
 import LoadingSpinner from "../components/ui/LoadingSpinner";
-import { invokeOpenAI } from "@/api/functions";
+import { autofillProductDetails } from "@/api/functions";
 import { generateMarketingStrategy } from "@/api/functions";
 import { generateAdCopies } from "@/api/functions";
+import { enhanceProductAnalysis } from "@/api/functions";
 import { VisualLibrary } from "@/api/entities";
 
 export default function ProductCreativeSetup() {
@@ -312,27 +313,19 @@ Now, generate the content for my product.`;
             additionalProperties: false
         };
 
-        console.log("Autofill: Sending prompt with current country:", currentProductData.target_country);
-        const aiResponse = await invokeOpenAI({ 
-            instructions, 
-            prompt, 
-            response_json_schema: schema,
-            effort: "high" // Request higher effort from the AI
-        });
-        
-        console.log("Autofill: Full AI response received:", aiResponse);
-        
-        if (!aiResponse || !aiResponse.data) {
-            throw new Error("AI response was empty or invalid.");
-        }
-
-        const aiData = aiResponse.data;
-        console.log("Autofill: AI data extracted:", aiData);
+        console.log("Autofill: calling backend autofill endpoint");
+        const aiData = await autofillProductDetails(
+          currentProductData.product_name,
+          currentProductData.what_is_it,
+          parseFloat(currentProductData.price),
+          currentProductData.target_country
+        );
+        console.log("Autofill: AI data received:", aiData);
 
         // Enhanced validation with better debugging
         const productDesc = aiData.product_description;
         const problemSolves = aiData.problem_it_solves;
-        const idealCustomers = aiData.ideal_customers;
+        const idealCustomers = aiData.target_customers || aiData.ideal_customers;
 
         console.log("Autofill: Field validation:", {
             productDesc: productDesc ? "✓ Has content" : "✗ Empty or missing",
@@ -425,7 +418,15 @@ Now, generate the content for my product.`;
 
     setIsUploading(true);
     try {
-      const { file_url } = await UploadFile({ file: file });
+      const uploadResult = await UploadFile({ file: file });
+      console.log('Upload result:', uploadResult);
+      
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload failed');
+      }
+      
+      const file_url = uploadResult.data.file_url;
+      console.log('Setting product_image_url to:', file_url);
       
       // Update the primary product image URL
       setProductData(prev => ({ ...prev, product_image_url: file_url }));
@@ -471,7 +472,13 @@ Now, generate the content for my product.`;
 
     setIsUploading(true);
     try {
-      const { file_url } = await UploadFile({ file: file });
+      const uploadResult = await UploadFile({ file: file });
+      
+      if (!uploadResult.success) {
+        throw new Error(uploadResult.error || 'Upload failed');
+      }
+      
+      const file_url = uploadResult.data.file_url;
 
       // Save to Visual Library (only works if product exists)
       if (editMode && productId) {
@@ -511,23 +518,41 @@ Now, generate the content for my product.`;
   };
 
   const handleGenerate = async () => {
+    console.log('🚀 handleGenerate called - starting validation...');
+    console.log('Current productData:', productData);
+    
     const requiredFields = [
       "product_name", "what_is_it", "price", "main_goal", "product_image_url",
       "product_description", "problem_it_solves", "target_country"
     ];
     const missingField = requiredFields.find(field => !productData[field] || String(productData[field]).trim() === '');
     if (missingField) {
+      console.log('❌ Validation failed - missing field:', missingField);
       toast.error(`Please fill out the '${missingField.replace(/_/g, ' ')}' field.`);
       return;
     }
 
+    console.log('✅ Validation passed - proceeding with generation...');
+    
+    // Fix missing target_country_code if target_country is set
+    let finalProductData = { ...productData };
+    if (finalProductData.target_country && !finalProductData.target_country_code) {
+      const matchingCountry = countries.find(c => c.name.toLowerCase() === finalProductData.target_country.toLowerCase());
+      if (matchingCountry) {
+        finalProductData.target_country_code = matchingCountry.code;
+        finalProductData.currency = matchingCountry.currency;
+        console.log('🔧 Auto-fixed country code:', matchingCountry.code, 'for country:', finalProductData.target_country);
+      }
+    }
+    
     setIsGenerating(true);
     let productIdToUse = productId;
 
     try {
       // Step 1: Save or Update the product record
       setLoadingText(editMode ? "Updating your product..." : "Saving your product...");
-      const productPayload = { ...productData, price: parseFloat(productData.price), created_by: user?.email };
+      const productPayload = { ...finalProductData, price: parseFloat(finalProductData.price), created_by: user?.email };
+      console.log('💾 Product payload being sent to backend:', productPayload);
 
       if (editMode) {
         await SimplifiedProduct.update(productIdToUse, productPayload);
@@ -568,37 +593,35 @@ Now, generate the content for my product.`;
       }
       toast.success("Product saved successfully! Now generating AI insights...");
 
-      // Step 2: Generate and save high-level AI Summary
+      // Step 2: Generate and save high-level AI Summary (backend endpoint)
+      console.log('📊 Starting AI enhancement for product:', productIdToUse);
       setLoadingText("Generating high-level marketing summary...");
-      const summaryPrompt = `Based on the product info, generate:
-        1. creative_concept_description: A 3-5 sentence, benefit-first marketing summary.
-        2. target_audience_summary: 3-6 bullet points (one sentence each) describing the target audience.
-        3. why_this_works: A JSON array of 3-5 strings, where each string is a specific persuasion reason (no jargon). Each string should be a complete sentence.
-        Product Name: ${productPayload.product_name}, Description: ${productPayload.product_description}, Target Country: ${productPayload.target_country}`;
-      const summarySchema = { type: "object", properties: { creative_concept_description: { type: "string" }, target_audience_summary: { type: "string" }, why_this_works: { type: "array", items: { type: "string" } } }, required: ["creative_concept_description", "target_audience_summary", "why_this_works"] };
-      
-      const { data: summaryResponse, error: summaryError } = await invokeOpenAI({ prompt: summaryPrompt, response_json_schema: summarySchema });
-      if (summaryError || !summaryResponse) throw new Error(`Failed to generate AI summary: ${summaryError?.message || 'No response'}`);
-      
-      await SimplifiedProduct.update(productIdToUse, { 
-        ai_analysis_summary: summaryResponse.creative_concept_description,
-        ai_target_audience_profile: summaryResponse.target_audience_summary,
-        ai_key_selling_points: summaryResponse.why_this_works
-      });
-      toast.success("Marketing summary generated and saved!");
+      try {
+        const enhanceResult = await enhanceProductAnalysis(productIdToUse);
+        console.log('✅ Enhancement result:', enhanceResult);
+        toast.success("Marketing summary generated and saved!");
+      } catch (e) {
+        console.error('❌ Enhancement failed:', e);
+        throw new Error(`Failed to generate AI summary: ${e?.message || 'Unknown error'}`);
+      }
 
       // Step 3: Generate detailed Marketing Strategy
+      console.log('🎯 Starting marketing strategy generation for product:', productIdToUse);
       setLoadingText("Generating detailed marketing strategy...");
-      const { data: strategyResult, error: strategyError } = await generateMarketingStrategy({ product_id: productIdToUse });
-      if (strategyError || !strategyResult?.success) throw new Error(`Failed to generate marketing strategy: ${strategyError?.message || strategyResult?.error || 'Unknown error'}`);
+      const strategyRes = await generateMarketingStrategy(productIdToUse);
+      console.log('📈 Strategy result:', strategyRes);
+      if (!strategyRes?.success) throw new Error(`Failed to generate marketing strategy: ${strategyRes?.error || 'Unknown error'}`);
       toast.success("Detailed marketing strategy created!");
       
       // Step 4: Generate Ad Copies
+      console.log('📝 Starting ad copies generation for product:', productIdToUse);
       setLoadingText("Generating ad copies with AI...");
-      const { data: adCopiesResult, error: adCopiesError } = await generateAdCopies({ product_id: productIdToUse });
-      if (adCopiesError || !adCopiesResult?.success) throw new Error(`Failed to generate ad copies: ${adCopiesError?.message || adCopiesResult?.error || 'Unknown error'}`);
+      const adCopiesRes = await generateAdCopies(productIdToUse);
+      console.log('📋 Ad copies result:', adCopiesRes);
+      if (!adCopiesRes?.success) throw new Error(`Failed to generate ad copies: ${adCopiesRes?.error || 'Unknown error'}`);
       
       // Final Step: Mark as complete and navigate
+      console.log('🏁 Marking product as complete and navigating...');
       await SimplifiedProduct.update(productIdToUse, { setup_completed: true });
       toast.success("Product setup complete! Redirecting to details page.");
       navigate(createPageUrl(`ProductDetails?id=${productIdToUse}`));
